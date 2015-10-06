@@ -1,0 +1,11 @@
+This is a template file. `replacer` doesn't care about any characters in this file
+except something in double mustaches: { { with no space in between followed by } }. If
+it sees that, it will replace according to the config file, replacing anything that
+has an entry with {{ replace me with }} corresponding to that key.
+
+Note some behavior:
+{{foo}}
+
+{{bar}}
+
+And remember, {{!@ #$}}.

@@ -1,0 +1,89 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use List::Util qw(min);
+use Getopt::Long;
+
+my $configfile = 'vars';
+my $noconfig = 0;
+GetOptions( "configfile=s" => \$configfile,
+            "noconfig" => \$noconfig);
+
+my %vars = ();
+unless ($noconfig) {
+    open my $fh, '<', $configfile
+        or ($noconfig || print STDERR
+            qq{ERROR: Could not open config file "$configfile" for reading. Program will exit.\n}
+          . qq{Use --noconfig if there are no replacements.\n} and exit 1);
+    my ($lastkey, $indent, $key, $value);
+    my $line_ct = 1;
+    while (my $line = <$fh>) {
+        if (defined $lastkey) {
+            $key = $lastkey;
+            my $cut = $indent;
+            if ($line =~ m/[^\s]/) {
+                my $cut = min($-[0], $cut);
+            }
+            $value = substr $line, min(length($line), $cut);
+        } else {
+            next unless $line =~ m/:/;
+            ($key, $value) = split(/:/, $line, 2);
+            unless ($value =~ m/[^\s]/) {
+                msg_w(qq{no entry made for zero-content key on line $line_ct.});
+            }
+
+            if ($value =~ m/[^\s]/) {
+                $indent = length($key) + 1 + $-[0]; # key length + : + index of match 
+            } else {
+                msg_w(qq{var "$key" found in $configfile with no value, skipping...});
+            }
+            $key =~ s/^\s+|\s+$//g;
+            $value =~ s/^\s//g;
+        }
+
+        $value =~ s/\s$//g;
+
+        if ($value =~ m/\\\\$/) { # two backslashes
+            $lastkey = $key;
+            $value = substr($value, 0, -2) . "\n";
+        } elsif ($value =~ m/\\$/) { # one backslash
+            $lastkey = $key;
+            $value = substr($value, 0, -1);
+        } else {
+            undef $lastkey;
+        }
+        $vars{$key} ||= "";
+        $vars{$key}  .= $value;
+    }
+    close $fh;
+};
+
+for my $filename (@ARGV) {
+    my ($print, $line_ct) = ('', 1);
+    open my $fh, '<', $filename
+        or (msg_w("Couldn't open $filename, skipping file...") and next);
+    while (my $line = <$fh>) {
+        if ($line =~ m/\{\{(.*?)}}/) {
+            my $var = $1;
+            $var =~ s/^\s+|\s+$//g;
+            if (exists $vars{$var}) {
+                $var = $vars{$var};
+                $line =~ s/\{\{(.*?)}}/$var/g;
+            } elsif ($noconfig) {
+                msg_w(qq{$filename, line $line_ct: replacement key "$var" found, but there is no config file. Leaving line unchanged...});
+            } else {
+                msg_w(qq{$filename, line $line_ct: replacement key "$var" not found in $configfile. Leaving line unchanged...});
+            }
+        }
+        $print .= $line;
+        $line_ct += 1;
+    }
+    close $fh;
+    print $print;
+}
+
+sub msg_w {
+    my $msg = shift;
+    print STDERR "Warning: $msg\n";
+}
